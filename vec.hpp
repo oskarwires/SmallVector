@@ -11,7 +11,6 @@ private:
   using VecT = std::vector<T>;
 
   // When our arr_ overflows, we move into the internal vec_
-  // TODO: Decide, do we move back into vector if unspilled?
   alignas(alignof(T)) std::byte arr_[STATIC_AMOUNT * sizeof(T)];
   std::optional<VecT> vec_;
   size_t size_;
@@ -24,7 +23,7 @@ private:
            STATIC_AMOUNT); // Should be more than we are moving or same
     vec_ = std::make_optional<VecT>();
     vec_->reserve(capacity);
-    for (size_t i = 0; i < size_; i++) {
+    for (size_t i = 0; i < size_ && i < STATIC_AMOUNT; i++) {
       vec_->push_back(std::move(get_element(i)));
       get_element_ptr(i)->~T();
     }
@@ -35,6 +34,10 @@ private:
     return reinterpret_cast<T *>(arr_) + i;
   }
   T &get_element(size_t i) noexcept { return *get_element_ptr(i); }
+  const T *get_element_ptr(size_t i) const noexcept {
+    return reinterpret_cast<const T *>(arr_) + i;
+  }
+  const T &get_element(size_t i) const noexcept { return *get_element_ptr(i); }
 
 public:
   using iterator = T *;
@@ -163,6 +166,7 @@ public:
 
   // ----- MODIFIERS -----
 
+  // Clears the internal static storage, or the vector, whatever's in use
   void clear() {
     if (vec_) {
       // All the static elements have been moved to the vector, and already
@@ -174,6 +178,134 @@ public:
       }
     }
     size_ = 0;
+  }
+
+  // Inserts `value` at `pos`
+  constexpr iterator insert(const_iterator pos, T &&value) {
+    const size_t idx = static_cast<size_t>(pos - cbegin());
+    size_++;
+    if (!vec_ && size_ <= STATIC_AMOUNT) {
+      for (size_t i = size_ - 1; i > idx; --i) {
+        T *src = get_element_ptr(i - 1);
+        T *dst = get_element_ptr(i);
+        new (dst) T(std::move(*src));
+        src->~T();
+      }
+
+      T *dst = get_element_ptr(idx);
+      new (dst) T(std::forward<T>(value));
+      return dst;
+    }
+
+    // If below is true, then, size_ must be > STATIC_AMOUNT
+    if (!vec_) {
+      spillover(size_);
+    }
+
+    // If we spillover, we now have a vector, or we already had a vector
+    auto it = vec_->insert(vec_->begin() + idx, std::forward<T>(value));
+    // Bit of a nasty way of converting the vector's iterator to ours
+    return &(*it);
+  }
+
+  // Inserts `value` at `pos`
+  constexpr iterator insert(const_iterator pos, const T &value) {
+    return insert(pos, T(value));
+  }
+
+  // Constructs a new value in-place at the back of the SmallVector
+  template <typename... Args>
+  constexpr iterator emplace(const_iterator pos, Args &&...args) {
+    const size_t idx = static_cast<size_t>(pos - cbegin());
+    size_++;
+    if (!vec_ && size_ <= STATIC_AMOUNT) {
+      for (size_t i = size_ - 1; i > idx; --i) {
+        T *src = get_element_ptr(i - 1);
+        T *dst = get_element_ptr(i);
+        new (dst) T(std::move(*src));
+        src->~T();
+      }
+
+      T *dst = get_element_ptr(idx);
+      new (dst) T(std::forward<Args>(args)...);
+      return dst;
+    }
+
+    // If below is true, then, size_ must be > STATIC_AMOUNT
+    if (!vec_) {
+      spillover(size_);
+    }
+
+    // If we spillover, we now have a vector, or we already had a vector
+    auto it = vec_->emplace(vec_->begin() + idx, std::forward<Args>(args)...);
+    // Bit of a nasty way of converting the vector's iterator to ours
+    return &(*it);
+  }
+
+  // Removes the value at the iterator `pos`, and returns the iterator for the
+  // value after it
+  constexpr iterator erase(const_iterator pos) {
+    const size_t idx = static_cast<size_t>(pos - cbegin());
+    if (vec_) {
+      // Vector case
+      auto it = vec_->erase(vec_->begin() + idx);
+      size_--;
+      return &(*it);
+    } else {
+      // Array case, let's destruct T at idx
+      T *val = get_element_ptr(idx);
+      val->~T();
+      for (size_t i = idx + 1; i < size_; ++i) {
+        T *src = get_element_ptr(i);
+        T *dst = get_element_ptr(i - 1);
+        new (dst) T(std::move(*src));
+        src->~T();
+      }
+      size_--;
+      if (idx == size_) {
+        // If the deleted element was the last
+        return end();
+      } else {
+        // Else, just return the element in the spot
+        return get_element_ptr(idx);
+      }
+    }
+  }
+
+  // Removes values from the `first` to `last` iterator (but not inclusive of
+  // `last`) Returns the iterator to the first value after the last removed
+  // value
+  constexpr iterator erase(const_iterator first, const_iterator last) {
+    const size_t first_idx = static_cast<size_t>(first - cbegin());
+    const size_t last_idx = static_cast<size_t>(last - cbegin());
+    if (vec_) {
+      // Vector case
+      auto it =
+          vec_->erase(vec_->begin() + first_idx, vec_->begin() + last_idx);
+      size_ -= (last_idx - first_idx);
+      return &(*it);
+    } else {
+      // Array case, let's destruct T from first to last
+      const size_t diff = last_idx - first_idx;
+      for (size_t i = first_idx; i < last_idx; i++) {
+        T *val = get_element_ptr(i);
+        val->~T();
+      }
+      for (size_t i = last_idx + 1; i < size_; ++i) {
+        T *src = get_element_ptr(i);
+        T *dst = get_element_ptr(i - diff);
+        new (dst) T(std::move(*src));
+        src->~T();
+      }
+      size_ -= (last_idx - first_idx);
+      if (last_idx == size_) {
+        // If the deleted element was the last
+        return end();
+      } else {
+        // Else, just return the element in the spot
+        return get_element_ptr(last_idx);
+      }
+    }
   }
 
   // Pushes data to the back of our SmallVector
@@ -190,6 +322,7 @@ public:
     }
     size_++;
   }
+  // Pushes data to the back of our SmallVector
   void push_back(const T &val) {
     if (!vec_) {
       if (size_ >= STATIC_AMOUNT) {
@@ -203,4 +336,18 @@ public:
     }
     size_++;
   }
+
+  // Removes the last element from the SmallVector, if empty this is UB
+  constexpr void pop_back() { erase(cend() - 1); }
+
+  // ----- HELPFUL FUNCTIONS -----
+  // These aren't part of the vector / array interface, just nice to have
+
+  // Returns true if the internal storage is a vector
+  // False means it's an array
+  bool is_vector() const noexcept { return vec_.has_value(); }
+
+  // Returns true if the internal storage is an array
+  // False means it's a vector
+  bool is_array() const noexcept { return !is_vector(); }
 };

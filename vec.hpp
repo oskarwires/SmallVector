@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cassert>
+#include <initializer_list>
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 template <class T, size_t STATIC_AMOUNT = 8> class SmallVector {
@@ -23,7 +25,7 @@ private:
            STATIC_AMOUNT); // Should be more than we are moving or same
     vec_ = std::make_optional<VecT>();
     vec_->reserve(capacity);
-    for (size_t i = 0; i < size_ && i < STATIC_AMOUNT; i++) {
+    for (size_t i = 0; i < size_ && i < STATIC_AMOUNT; ++i) {
       vec_->push_back(std::move(get_element(i)));
       get_element_ptr(i)->~T();
     }
@@ -40,12 +42,43 @@ private:
   const T &get_element(size_t i) const noexcept { return *get_element_ptr(i); }
 
 public:
+  using value_type = T;
+  using reference = T &;
+  using const_reference = const T &;
   using iterator = T *;
   using const_iterator = const T *;
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
   SmallVector() : size_(0) {};
+
+  SmallVector(size_t count) : size_(0) {
+    reserve(count);
+    // Could be in either array/vector mode
+    for (size_t i = 0; i < count; ++i) {
+      push_back(T());
+    }
+  }
+
+  SmallVector(size_t count, const T &value) : size_(0) {
+    reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+      push_back(value);
+    }
+  }
+
+  SmallVector(std::initializer_list<T> init) : size_(0) {
+    reserve(init.size());
+    std::copy(init.begin(), init.end(), std::back_inserter(*this));
+  }
+
+  ~SmallVector() {};
+
+  SmallVector(const SmallVector &other) = default;
+  SmallVector(SmallVector &&other) = default;
+
+  SmallVector &operator=(const SmallVector &other) = default;
+  SmallVector &operator=(SmallVector &&other) = default;
 
   // ----- ELEMENT ACCESS -----
 
@@ -213,7 +246,7 @@ public:
     return insert(pos, T(value));
   }
 
-  // Constructs a new value in-place at the back of the SmallVector
+  // Constructs a new value in-place at `pos` of the SmallVector
   template <typename... Args>
   constexpr iterator emplace(const_iterator pos, Args &&...args) {
     const size_t idx = static_cast<size_t>(pos - cbegin());
@@ -337,11 +370,96 @@ public:
     size_++;
   }
 
+  // Constructs a new value in-place at the back of the SmallVector
+  template <typename... Args> void emplace_back(Args &&...args) {
+    if (!vec_) {
+      if (size_ >= STATIC_AMOUNT) {
+        spillover(size_ + 1);
+        vec_->emplace_back(std::forward<Args>(args)...);
+      } else {
+        T *dst = get_element_ptr(size_);
+        new (dst) T(std::forward<Args>(args)...);
+      }
+    } else {
+      vec_->emplace_back(std::forward<Args>(args)...);
+    }
+    size_++;
+  }
+
   // Removes the last element from the SmallVector, if empty this is UB
   constexpr void pop_back() { erase(cend() - 1); }
 
+  constexpr void resize(size_t count, const T &value) {
+    if (count == size_)
+      return;
+    if (count > max_size())
+      throw std::length_error("Requested resize above maximum size");
+
+    if (size_ > count) {
+      erase(begin() + count, end());
+    } else {
+      reserve(count);
+      for (size_t i = size_; i < count; ++i) {
+        push_back(value);
+      }
+    }
+  }
+
+  constexpr void resize(size_t count) {
+    if (count == size_)
+      return;
+    if (count > max_size())
+      throw std::length_error("Requested resize above maximum size");
+
+    if (size_ > count) {
+      erase(begin() + count, end());
+    } else {
+      reserve(count);
+      for (size_t i = size_; i < count; ++i) {
+        emplace_back();
+      }
+    }
+  }
+
+  // ----- NON-MEMBER FUNCTIONS -----
+  bool operator==(const SmallVector<T> &other) const {
+    if (size_ != other.size())
+      return false;
+    return std::equal(begin(), end(), other.begin());
+  }
+
+  bool operator!=(const SmallVector<T> &other) const {
+    return !(*this == other);
+  }
+
   // ----- HELPFUL FUNCTIONS -----
   // These aren't part of the vector / array interface, just nice to have
+
+  // Appends `other` to the end of this SmallVector, clearing `other` after
+  void append(SmallVector<T> &&other) {
+    // Took until C++23 for std::vector to have something analgous to this
+    // (std::append_rage), bit strange
+    if (this == &other)
+      return;
+
+    const size_t other_size = other.size();
+    if (other_size == 0)
+      return;
+
+    reserve(size_ + other_size);
+
+    std::move(other.begin(), other.end(), std::back_inserter(*this));
+    other.clear();
+  }
+  // Appends `other` to the end of this SmallVector
+  void append(const SmallVector<T> &other) {
+    const size_t other_size = other.size();
+    if (other_size == 0)
+      return;
+
+    reserve(size_ + other_size);
+    std::copy(other.begin(), other.end(), std::back_inserter(*this));
+  }
 
   // Returns true if the internal storage is a vector
   // False means it's an array
@@ -350,4 +468,14 @@ public:
   // Returns true if the internal storage is an array
   // False means it's a vector
   bool is_array() const noexcept { return !is_vector(); }
+
+  // Returns an optional value, containing the internal vector
+  // If is_vector() == true, this returns an optional containing the vector
+  // If it isn't true, then the optional is empty (!has_value)
+  std::optional<VecT> &get_vec() { return vec_; }
+
+  // Returns an optional value, containing the internal vector
+  // If is_vector() == true, this returns an optional containing the vector
+  // If it isn't true, then the optional is empty (!has_value)
+  const std::optional<VecT> &get_vec() const { return vec_; }
 };

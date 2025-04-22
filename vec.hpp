@@ -206,9 +206,8 @@ public:
   // Has no side effects if using the internal static storage, otherwise calls
   // the vector's `shrink_to_fit()`
   constexpr void shrink_to_fit() {
-    if (vec_) {
+    if (vec_)
       vec_->shrink_to_fit();
-    }
   }
 
   // ----- MODIFIERS -----
@@ -248,9 +247,8 @@ public:
     }
 
     // If below is true, then, size_ must be > STATIC_AMOUNT
-    if (!vec_) {
+    if (!vec_)
       spillover(size_);
-    }
 
     // If we spillover, we now have a vector, or we already had a vector
     auto it = vec_->insert(vec_->begin() + idx, std::forward<T>(value));
@@ -282,9 +280,8 @@ public:
     }
 
     // If below is true, then, size_ must be > STATIC_AMOUNT
-    if (!vec_) {
+    if (!vec_)
       spillover(size_);
-    }
 
     // If we spillover, we now have a vector, or we already had a vector
     auto it = vec_->emplace(vec_->begin() + idx, std::forward<Args>(args)...);

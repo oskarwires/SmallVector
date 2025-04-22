@@ -54,7 +54,7 @@ public:
 
   constexpr SmallVector() : size_(0) {};
 
-  constexpr SmallVector(size_t count) : size_(0) {
+  constexpr explicit SmallVector(size_t count) : size_(0) {
     reserve(count);
     // Could be in either array/vector mode
     for (size_t i = 0; i < count; ++i) {

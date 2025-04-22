@@ -19,7 +19,7 @@ private:
 
   // Spills over the current array values into a vector, with the ability to
   // reserve more than we need with `extra`
-  void spillover(size_t capacity) {
+  constexpr void spillover(size_t capacity) {
     assert(!vec_); // Should be uninitialised
     assert(capacity >=
            STATIC_AMOUNT); // Should be more than we are moving or same
@@ -32,14 +32,16 @@ private:
   }
 
   // Just two nice helper functions
-  T *get_element_ptr(size_t i) noexcept {
+  constexpr T *get_element_ptr(size_t i) noexcept {
     return reinterpret_cast<T *>(arr_) + i;
   }
-  T &get_element(size_t i) noexcept { return *get_element_ptr(i); }
-  const T *get_element_ptr(size_t i) const noexcept {
+  constexpr T &get_element(size_t i) noexcept { return *get_element_ptr(i); }
+  constexpr const T *get_element_ptr(size_t i) const noexcept {
     return reinterpret_cast<const T *>(arr_) + i;
   }
-  const T &get_element(size_t i) const noexcept { return *get_element_ptr(i); }
+  constexpr const T &get_element(size_t i) const noexcept {
+    return *get_element_ptr(i);
+  }
 
 public:
   using value_type = T;
@@ -50,39 +52,39 @@ public:
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-  SmallVector() : size_(0) {};
+  constexpr SmallVector() : size_(0) {};
 
-  SmallVector(size_t count) : size_(0) {
+  constexpr SmallVector(size_t count) : size_(0) {
     reserve(count);
     // Could be in either array/vector mode
     for (size_t i = 0; i < count; ++i) {
-      push_back(T());
+      emplace_back();
     }
   }
 
-  SmallVector(size_t count, const T &value) : size_(0) {
+  constexpr SmallVector(size_t count, const T &value) : size_(0) {
     reserve(count);
     for (size_t i = 0; i < count; ++i) {
       push_back(value);
     }
   }
 
-  SmallVector(std::initializer_list<T> init) : size_(0) {
+  constexpr SmallVector(std::initializer_list<T> init) : size_(0) {
     reserve(init.size());
     std::copy(init.begin(), init.end(), std::back_inserter(*this));
   }
 
-  ~SmallVector() {};
+  constexpr ~SmallVector() { clear(); };
 
-  SmallVector(const SmallVector &other) = default;
-  SmallVector(SmallVector &&other) = default;
+  constexpr SmallVector(const SmallVector &other) = default;
+  constexpr SmallVector(SmallVector &&other) = default;
 
-  SmallVector &operator=(const SmallVector &other) = default;
-  SmallVector &operator=(SmallVector &&other) = default;
+  constexpr SmallVector &operator=(const SmallVector &other) = default;
+  constexpr SmallVector &operator=(SmallVector &&other) = default;
 
   // ----- ELEMENT ACCESS -----
 
-  T &at(size_t i) {
+  constexpr T &at(size_t i) {
     if (i >= size_) {
       throw std::out_of_range("Out of range access");
     } else {
@@ -90,7 +92,7 @@ public:
     }
   }
 
-  const T &at(size_t i) const {
+  constexpr const T &at(size_t i) const {
     if (i >= size_) {
       throw std::out_of_range("Out of range access");
     } else {
@@ -98,73 +100,85 @@ public:
     }
   }
 
-  T &operator[](size_t i) { return vec_ ? (*vec_)[i] : get_element(i); }
-  const T &operator[](size_t i) const {
+  constexpr T &operator[](size_t i) {
+    return vec_ ? (*vec_)[i] : get_element(i);
+  }
+  constexpr const T &operator[](size_t i) const {
     return vec_ ? (*vec_)[i] : get_element(i);
   }
 
-  T &front() { return (*this)[0]; }
-  const T &front() const { return (*this)[0]; }
+  constexpr T &front() { return (*this)[0]; }
+  constexpr const T &front() const { return (*this)[0]; }
 
-  T &back() { return (*this)[size_ - 1]; }
-  const T &back() const { return (*this)[size_ - 1]; }
+  constexpr T &back() { return (*this)[size_ - 1]; }
+  constexpr const T &back() const { return (*this)[size_ - 1]; }
 
-  T *data() noexcept { return vec_ ? &(*vec_)[0] : get_element_ptr(0); }
-  const T *data() const noexcept {
+  constexpr T *data() noexcept {
+    return vec_ ? &(*vec_)[0] : get_element_ptr(0);
+  }
+  constexpr const T *data() const noexcept {
     return vec_ ? &(*vec_)[0] : get_element_ptr(0);
   }
 
   // ----- ITERATORS -----
 
-  iterator begin() noexcept { return vec_ ? &(*vec_)[0] : get_element_ptr(0); }
-  const_iterator begin() const noexcept {
+  constexpr iterator begin() noexcept {
     return vec_ ? &(*vec_)[0] : get_element_ptr(0);
   }
-  const_iterator cbegin() const noexcept {
+  constexpr const_iterator begin() const noexcept {
+    return vec_ ? &(*vec_)[0] : get_element_ptr(0);
+  }
+  constexpr const_iterator cbegin() const noexcept {
     return vec_ ? &(*vec_)[0] : get_element_ptr(0);
   }
 
-  iterator end() noexcept {
+  constexpr iterator end() noexcept {
     return vec_ ? &(*vec_)[size_] : get_element_ptr(size_);
   }
-  const_iterator end() const noexcept {
+  constexpr const_iterator end() const noexcept {
     return vec_ ? &(*vec_)[size_] : get_element_ptr(size_);
   }
-  const_iterator cend() const noexcept {
+  constexpr const_iterator cend() const noexcept {
     return vec_ ? &(*vec_)[size_] : get_element_ptr(size_);
   }
 
-  reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
-  const_reverse_iterator rbegin() const noexcept {
+  constexpr reverse_iterator rbegin() noexcept {
+    return reverse_iterator(end());
+  }
+  constexpr const_reverse_iterator rbegin() const noexcept {
     return const_reverse_iterator(end());
   }
-  const_reverse_iterator crbegin() const noexcept {
+  constexpr const_reverse_iterator crbegin() const noexcept {
     return const_reverse_iterator(cend());
   }
 
-  reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
-  const_reverse_iterator rend() const noexcept {
+  constexpr reverse_iterator rend() noexcept {
+    return reverse_iterator(begin());
+  }
+  constexpr const_reverse_iterator rend() const noexcept {
     return const_reverse_iterator(begin());
   }
-  const_reverse_iterator crend() const noexcept {
+  constexpr const_reverse_iterator crend() const noexcept {
     return const_reverse_iterator(cbegin());
   }
 
   // ----- CAPACITY -----
 
   // Returns true if the SmallVector is empty
-  bool empty() const { return size_ == 0; }
+  constexpr bool empty() const { return size_ == 0; }
 
   // Returns the current amount of stored values T in the SmallVector
-  size_t size() const { return size_; }
+  constexpr size_t size() const { return size_; }
 
   // The maximum size is limited by the vector, not the static storage
-  static size_t max_size() noexcept { return std::numeric_limits<T>::max(); }
+  constexpr static size_t max_size() noexcept {
+    return std::numeric_limits<T>::max();
+  }
 
   // Reserves the requested amount if the size is > the current capacity (sum of
   // stack storage & vector's capacity). Has the side effect of initialising the
   // internal vector and reserving size if size > STATIC_SIZE
-  void reserve(size_t size) {
+  constexpr void reserve(size_t size) {
     // If we want the amount statically stored, then, do nothing!
     if (size <= STATIC_AMOUNT) {
       return;
@@ -181,7 +195,7 @@ public:
   // If the internal vector hasn't been allocated (no spillover), returns the
   // size of the stack allocated array, and if it has, then the vector's
   // capacity
-  size_t capacity() const noexcept {
+  constexpr size_t capacity() const noexcept {
     if (!vec_) {
       return STATIC_AMOUNT;
     } else {
@@ -191,7 +205,7 @@ public:
 
   // Has no side effects if using the internal static storage, otherwise calls
   // the vector's `shrink_to_fit()`
-  void shrink_to_fit() {
+  constexpr void shrink_to_fit() {
     if (vec_) {
       vec_->shrink_to_fit();
     }
@@ -200,7 +214,7 @@ public:
   // ----- MODIFIERS -----
 
   // Clears the internal static storage, or the vector, whatever's in use
-  void clear() {
+  constexpr void clear() {
     if (vec_) {
       // All the static elements have been moved to the vector, and already
       // destructed by `spillover()`, so all we need to do is clear the vec
@@ -214,6 +228,9 @@ public:
   }
 
   // Inserts `value` at `pos`
+  // If a constructor / move throws, then, UB
+  // TODO: Use a temporary buff or something to leave a consistent
+  // state if an exception occurs, guarantee no change to our class
   constexpr iterator insert(const_iterator pos, T &&value) {
     const size_t idx = static_cast<size_t>(pos - cbegin());
     size_++;
@@ -324,7 +341,7 @@ public:
         T *val = get_element_ptr(i);
         val->~T();
       }
-      for (size_t i = last_idx + 1; i < size_; ++i) {
+      for (size_t i = last_idx; i < size_; ++i) {
         T *src = get_element_ptr(i);
         T *dst = get_element_ptr(i - diff);
         new (dst) T(std::move(*src));
@@ -342,7 +359,7 @@ public:
   }
 
   // Pushes data to the back of our SmallVector
-  void push_back(T &&val) {
+  constexpr void push_back(T &&val) {
     if (!vec_) {
       if (size_ >= STATIC_AMOUNT) {
         spillover(size_ + 1);
@@ -356,7 +373,7 @@ public:
     size_++;
   }
   // Pushes data to the back of our SmallVector
-  void push_back(const T &val) {
+  constexpr void push_back(const T &val) {
     if (!vec_) {
       if (size_ >= STATIC_AMOUNT) {
         spillover(size_ + 1);
@@ -371,7 +388,7 @@ public:
   }
 
   // Constructs a new value in-place at the back of the SmallVector
-  template <typename... Args> void emplace_back(Args &&...args) {
+  template <typename... Args> constexpr void emplace_back(Args &&...args) {
     if (!vec_) {
       if (size_ >= STATIC_AMOUNT) {
         spillover(size_ + 1);
@@ -421,14 +438,20 @@ public:
     }
   }
 
+  constexpr void swap(SmallVector &other) noexcept {
+    std::swap(arr_, other.arr_);
+    std::swap(vec_, other.vec_);
+    std::swap(size_, other.size_);
+  }
+
   // ----- NON-MEMBER FUNCTIONS -----
-  bool operator==(const SmallVector<T> &other) const {
+  constexpr bool operator==(const SmallVector<T> &other) const {
     if (size_ != other.size())
       return false;
     return std::equal(begin(), end(), other.begin());
   }
 
-  bool operator!=(const SmallVector<T> &other) const {
+  constexpr bool operator!=(const SmallVector<T> &other) const {
     return !(*this == other);
   }
 
@@ -436,7 +459,7 @@ public:
   // These aren't part of the vector / array interface, just nice to have
 
   // Appends `other` to the end of this SmallVector, clearing `other` after
-  void append(SmallVector<T> &&other) {
+  constexpr void append(SmallVector<T> &&other) {
     // Took until C++23 for std::vector to have something analgous to this
     // (std::append_rage), bit strange
     if (this == &other)
@@ -452,7 +475,7 @@ public:
     other.clear();
   }
   // Appends `other` to the end of this SmallVector
-  void append(const SmallVector<T> &other) {
+  constexpr void append(const SmallVector<T> &other) {
     const size_t other_size = other.size();
     if (other_size == 0)
       return;
@@ -463,19 +486,19 @@ public:
 
   // Returns true if the internal storage is a vector
   // False means it's an array
-  bool is_vector() const noexcept { return vec_.has_value(); }
+  constexpr bool is_vector() const noexcept { return vec_.has_value(); }
 
   // Returns true if the internal storage is an array
   // False means it's a vector
-  bool is_array() const noexcept { return !is_vector(); }
+  constexpr bool is_array() const noexcept { return !is_vector(); }
 
   // Returns an optional value, containing the internal vector
   // If is_vector() == true, this returns an optional containing the vector
   // If it isn't true, then the optional is empty (!has_value)
-  std::optional<VecT> &get_vec() { return vec_; }
+  constexpr std::optional<VecT> &get_vec() { return vec_; }
 
   // Returns an optional value, containing the internal vector
   // If is_vector() == true, this returns an optional containing the vector
   // If it isn't true, then the optional is empty (!has_value)
-  const std::optional<VecT> &get_vec() const { return vec_; }
+  constexpr const std::optional<VecT> &get_vec() const { return vec_; }
 };

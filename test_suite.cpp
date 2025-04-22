@@ -9,16 +9,34 @@ struct Simple {
 struct Tracker {
   static int constructor_count;
   static int destructor_count;
+  static int move_count;
+  static int copy_count;
+
+  int a_; // Just a random variable to use for emplace testing
 
   ~Tracker() { ++destructor_count; }
 
-  Tracker() { ++constructor_count; }
+  Tracker() noexcept { ++constructor_count; }
+  Tracker(int a) noexcept : a_(a) { ++constructor_count; }
 
-  static void reset() { destructor_count = constructor_count = 0; }
+  Tracker(const Tracker &other) noexcept : a_(other.a_) { copy_count++; }
+
+  Tracker(Tracker &&other) noexcept : a_(std::move(other.a_)) { move_count++; }
+  Tracker &operator=(Tracker &&other) noexcept {
+    a_ = std::move(other.a_);
+    copy_count++;
+    return *this;
+  }
+
+  static void reset() {
+    destructor_count = constructor_count = move_count = copy_count = 0;
+  }
 };
 
 int Tracker::constructor_count = 0;
 int Tracker::destructor_count = 0;
+int Tracker::move_count = 0;
+int Tracker::copy_count = 0;
 
 int main() {
   using namespace boost::ut;
@@ -156,20 +174,112 @@ int main() {
         expect(s.a == 1_i);
         expect(s.b == 2_i);
       }
+
+      // Now let's check that no move operator is called
+      SmallVector<Tracker> v2;
+      Tracker::reset();
+      v2.emplace_back(100);
+      expect(Tracker::move_count == 0_i);
+      expect(v2[0].a_ == 100_i);
+      // As opposed to push_back...
+      Tracker::reset();
+      v2.push_back({101});
+      expect(Tracker::move_count == 1_i);
+      expect(v2[1].a_ == 101_i);
     };
 
     should("erase()") = [] {
       SmallVector<Tracker> v(5); // 5 Tracker objects
       Tracker::reset();          // Reset the counts
       v.erase(v.end() - 1);      // Erases the last element
-      expect(v.size() == 4_i);
+      expect(v.size() == 4_i);   // Should be 4 elements left
       expect(Tracker::destructor_count == 1_i);
-      // We should've had a destruction
-      // TODO: FIGURE OUT WHAT'S GOING ON HERE
+      // There should've been just ONE destruct, as, we deleted the last
+      // element, and nothing was moved into its place
       Tracker::reset();
       v.erase(v.begin(), v.begin() + 2); // Erase first two
       expect(v.size() == 2_i);
       expect(Tracker::destructor_count == 4_i);
+      Tracker::reset(); // Just 2 elements left, let's erase the first
+      v.erase(v.begin());
+      expect(Tracker::destructor_count == 2_i);
+      // Destructed first element, and remnants of moved second
+      expect(v.size() == 1_i);
+      Tracker::reset();
+      // Let's test the single position erase()
+      v.erase(v.begin());
+      expect(Tracker::destructor_count == 1_i);
+      expect(v.size() == 0_i);
+      expect(v.empty());
+      // Should be empty!
+
+      // Second erase test
+      SmallVector<int> v2 = {1, 2, 3, 4, 5, 6, 7};
+      v2.erase(v2.begin() + 1, v2.begin() + 3);
+      expect(v2 == SmallVector({1, 4, 5, 6, 7}));
+      expect(v2.size() == 5_i);
+      v2.erase(v2.begin()); // Removes first element
+      expect(v2 == SmallVector({4, 5, 6, 7}));
+    };
+
+    should("push_back()") = [] {
+      SmallVector<int> v;
+      for (int i = 0; i < 8; ++i) {
+        v.push_back(i);
+      }
+      expect(v.is_array());
+      for (int i = 0; i < 5; ++i) {
+        v.push_back(i);
+      }
+      expect(v.is_vector());
+      expect(v == SmallVector({0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4}));
+      expect(v.size() == 13_i);
+    };
+
+    should("append()") = [] {
+      SmallVector<int> v1 = {1, 2, 3, 4};
+      SmallVector<int> v2 = {5, 6, 7, 8};
+      expect(v1.size() == 4_i);
+      expect(v2.size() == 4_i);
+      v1.append(v2);
+      expect(v1.size() == 8_i);
+      expect(v1 == SmallVector({1, 2, 3, 4, 5, 6, 7, 8}));
+    };
+
+    should("pop_back()") = [] {
+      SmallVector<int> v = {1, 2, 3, 4, 5};
+      v.pop_back();
+      expect(v.size() == 4_i);
+      expect(v == SmallVector({1, 2, 3, 4}));
+    };
+
+    should("resize()") = [] {
+      SmallVector<int> v;
+      v.resize(8);
+      expect(v.size() == 8_i);
+      expect(v.is_array()); // Should still be in array mode
+      v.resize(16);
+      expect(v.size() == 16_i);
+      expect(v.is_vector());
+    };
+
+    should("swap()") = [] {
+      SmallVector<int> v1 = {1, 2, 3, 4, 5};
+      SmallVector<int> v2 = {6, 7};
+      v1.swap(v2);
+      expect(v1.size() == 2_i);
+      expect(v2.size() == 5_i);
+      expect(v1 == SmallVector({6, 7}));
+      expect(v2 == SmallVector({1, 2, 3, 4, 5}));
+    };
+  };
+
+  "[construct/destruct/move/copy]"_test = [] {
+    should("construct()") = [] {
+      Tracker::reset();
+      { SmallVector<Tracker> v(5); }
+      expect(Tracker::constructor_count == 5_i);
+      expect(Tracker::destructor_count == 5_i);
     };
   };
 }

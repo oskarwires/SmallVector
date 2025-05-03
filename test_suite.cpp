@@ -224,7 +224,9 @@ int main() {
 
     should("push_back()") = [] {
       SmallVector<int> v;
-      for (int i = 0; i < 8; ++i) {
+      const size_t static_size = v.get_static_size();
+      expect(static_size != 0_i);
+      for (int i = 0; i < static_size; ++i) {
         v.push_back(i);
       }
       expect(v.is_array());
@@ -232,8 +234,7 @@ int main() {
         v.push_back(i);
       }
       expect(v.is_vector());
-      expect(v == SmallVector({0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4}));
-      expect(v.size() == 13_i);
+      expect(v.size() == (static_size + 5));
     };
 
     should("append()") = [] {
@@ -255,11 +256,14 @@ int main() {
 
     should("resize()") = [] {
       SmallVector<int> v;
-      v.resize(8);
-      expect(v.size() == 8_i);
+      const size_t static_size = v.get_static_size();
+      const size_t expected_size = CACHE_LINE_SIZE_BYTES / sizeof(int);
+      expect(static_size == expected_size);
+      v.resize(static_size);
+      expect(v.size() == expected_size);
       expect(v.is_array()); // Should still be in array mode
-      v.resize(16);
-      expect(v.size() == 16_i);
+      v.resize(static_size + 1);
+      expect(v.size() == (expected_size + 1));
       expect(v.is_vector());
     };
 

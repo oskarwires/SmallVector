@@ -8,7 +8,33 @@
 #include <stdexcept>
 #include <vector>
 
-template <class T, size_t STATIC_AMOUNT = 8> class SmallVector {
+constexpr size_t CACHE_LINE_SIZE_BYTES = 64;
+constexpr size_t MAX_SIZE_BYTES = 10240; // 10 KB
+constexpr size_t FALLBACK_SIZE = 8;
+// If T doesn't fit in the cache line, then, we will have FALLBACK_SIZE amount
+// of elements HOWEVER, if MAX_SIZE_BYTES is violated, then, we use the minimum
+// amount to satisfy that constraint
+
+// Decides at compile time how big to make our static storage
+// If T fits within a cache line, we minimise cache misses by fully utilising
+// the line If T doesn't fit within a cache line, then, we default to
+// FALLBACK_SIZE amount of T If the sizeof(FALLBACK_SIZE * sizeof(T)) >
+// MAX_SIZE_BYTES, then, we use the maximum amount of T that can fit in
+// MAX_SIZE_BYTES, or, 1, whatever is larger.
+consteval size_t calculate_static_size(const size_t size_of_t) {
+  if (size_of_t <= CACHE_LINE_SIZE_BYTES) {
+    return CACHE_LINE_SIZE_BYTES / size_of_t;
+  }
+  if (FALLBACK_SIZE * size_of_t <= MAX_SIZE_BYTES) {
+    return FALLBACK_SIZE;
+  } else {
+    const size_t divided_size = MAX_SIZE_BYTES / size_of_t;
+    return (divided_size == 0) ? 1 : divided_size;
+  }
+}
+
+template <typename T, size_t STATIC_AMOUNT = calculate_static_size(sizeof(T))>
+class SmallVector {
 private:
   using VecT = std::vector<T>;
 
@@ -26,21 +52,23 @@ private:
     vec_ = std::make_optional<VecT>();
     vec_->reserve(capacity);
     for (size_t i = 0; i < size_ && i < STATIC_AMOUNT; ++i) {
-      vec_->push_back(std::move(get_element(i)));
-      get_element_ptr(i)->~T();
+      vec_->push_back(std::move(get_arr_element(i)));
+      get_arr_element_ptr(i)->~T();
     }
   }
 
   // Just two nice helper functions
-  constexpr T *get_element_ptr(size_t i) noexcept {
+  constexpr T *get_arr_element_ptr(size_t i) noexcept {
     return reinterpret_cast<T *>(arr_) + i;
   }
-  constexpr T &get_element(size_t i) noexcept { return *get_element_ptr(i); }
-  constexpr const T *get_element_ptr(size_t i) const noexcept {
+  constexpr T &get_arr_element(size_t i) noexcept {
+    return *get_arr_element_ptr(i);
+  }
+  constexpr const T *get_arr_element_ptr(size_t i) const noexcept {
     return reinterpret_cast<const T *>(arr_) + i;
   }
-  constexpr const T &get_element(size_t i) const noexcept {
-    return *get_element_ptr(i);
+  constexpr const T &get_arr_element(size_t i) const noexcept {
+    return *get_arr_element_ptr(i);
   }
 
 public:
@@ -101,10 +129,10 @@ public:
   }
 
   constexpr T &operator[](size_t i) {
-    return vec_ ? (*vec_)[i] : get_element(i);
+    return vec_ ? (*vec_)[i] : get_arr_element(i);
   }
   constexpr const T &operator[](size_t i) const {
-    return vec_ ? (*vec_)[i] : get_element(i);
+    return vec_ ? (*vec_)[i] : get_arr_element(i);
   }
 
   constexpr T &front() { return (*this)[0]; }
@@ -114,32 +142,32 @@ public:
   constexpr const T &back() const { return (*this)[size_ - 1]; }
 
   constexpr T *data() noexcept {
-    return vec_ ? &(*vec_)[0] : get_element_ptr(0);
+    return vec_ ? &(*vec_)[0] : get_arr_element_ptr(0);
   }
   constexpr const T *data() const noexcept {
-    return vec_ ? &(*vec_)[0] : get_element_ptr(0);
+    return vec_ ? &(*vec_)[0] : get_arr_element_ptr(0);
   }
 
   // ----- ITERATORS -----
 
   constexpr iterator begin() noexcept {
-    return vec_ ? &(*vec_)[0] : get_element_ptr(0);
+    return vec_ ? &(*vec_)[0] : get_arr_element_ptr(0);
   }
   constexpr const_iterator begin() const noexcept {
-    return vec_ ? &(*vec_)[0] : get_element_ptr(0);
+    return vec_ ? &(*vec_)[0] : get_arr_element_ptr(0);
   }
   constexpr const_iterator cbegin() const noexcept {
-    return vec_ ? &(*vec_)[0] : get_element_ptr(0);
+    return vec_ ? &(*vec_)[0] : get_arr_element_ptr(0);
   }
 
   constexpr iterator end() noexcept {
-    return vec_ ? &(*vec_)[size_] : get_element_ptr(size_);
+    return vec_ ? &(*vec_)[size_] : get_arr_element_ptr(size_);
   }
   constexpr const_iterator end() const noexcept {
-    return vec_ ? &(*vec_)[size_] : get_element_ptr(size_);
+    return vec_ ? &(*vec_)[size_] : get_arr_element_ptr(size_);
   }
   constexpr const_iterator cend() const noexcept {
-    return vec_ ? &(*vec_)[size_] : get_element_ptr(size_);
+    return vec_ ? &(*vec_)[size_] : get_arr_element_ptr(size_);
   }
 
   constexpr reverse_iterator rbegin() noexcept {
@@ -220,7 +248,7 @@ public:
       vec_->clear();
     } else {
       for (size_t i = size_; i > 0; --i) {
-        get_element_ptr(i - 1)->~T();
+        get_arr_element_ptr(i - 1)->~T();
       }
     }
     size_ = 0;
@@ -235,13 +263,13 @@ public:
     size_++;
     if (!vec_ && size_ <= STATIC_AMOUNT) {
       for (size_t i = size_ - 1; i > idx; --i) {
-        T *src = get_element_ptr(i - 1);
-        T *dst = get_element_ptr(i);
+        T *src = get_arr_element_ptr(i - 1);
+        T *dst = get_arr_element_ptr(i);
         new (dst) T(std::move(*src));
         src->~T();
       }
 
-      T *dst = get_element_ptr(idx);
+      T *dst = get_arr_element_ptr(idx);
       new (dst) T(std::forward<T>(value));
       return dst;
     }
@@ -268,13 +296,13 @@ public:
     size_++;
     if (!vec_ && size_ <= STATIC_AMOUNT) {
       for (size_t i = size_ - 1; i > idx; --i) {
-        T *src = get_element_ptr(i - 1);
-        T *dst = get_element_ptr(i);
+        T *src = get_arr_element_ptr(i - 1);
+        T *dst = get_arr_element_ptr(i);
         new (dst) T(std::move(*src));
         src->~T();
       }
 
-      T *dst = get_element_ptr(idx);
+      T *dst = get_arr_element_ptr(idx);
       new (dst) T(std::forward<Args>(args)...);
       return dst;
     }
@@ -300,11 +328,11 @@ public:
       return &(*it);
     } else {
       // Array case, let's destruct T at idx
-      T *val = get_element_ptr(idx);
+      T *val = get_arr_element_ptr(idx);
       val->~T();
       for (size_t i = idx + 1; i < size_; ++i) {
-        T *src = get_element_ptr(i);
-        T *dst = get_element_ptr(i - 1);
+        T *src = get_arr_element_ptr(i);
+        T *dst = get_arr_element_ptr(i - 1);
         new (dst) T(std::move(*src));
         src->~T();
       }
@@ -314,7 +342,7 @@ public:
         return end();
       } else {
         // Else, just return the element in the spot
-        return get_element_ptr(idx);
+        return get_arr_element_ptr(idx);
       }
     }
   }
@@ -335,12 +363,12 @@ public:
       // Array case, let's destruct T from first to last
       const size_t diff = last_idx - first_idx;
       for (size_t i = first_idx; i < last_idx; i++) {
-        T *val = get_element_ptr(i);
+        T *val = get_arr_element_ptr(i);
         val->~T();
       }
       for (size_t i = last_idx; i < size_; ++i) {
-        T *src = get_element_ptr(i);
-        T *dst = get_element_ptr(i - diff);
+        T *src = get_arr_element_ptr(i);
+        T *dst = get_arr_element_ptr(i - diff);
         new (dst) T(std::move(*src));
         src->~T();
       }
@@ -350,7 +378,7 @@ public:
         return end();
       } else {
         // Else, just return the element in the spot
-        return get_element_ptr(last_idx);
+        return get_arr_element_ptr(last_idx);
       }
     }
   }
@@ -362,7 +390,7 @@ public:
         spillover(size_ + 1);
         vec_->push_back(std::forward<T>(val));
       } else {
-        new (get_element_ptr(size_)) T(std::forward<T>(val));
+        new (get_arr_element_ptr(size_)) T(std::forward<T>(val));
       }
     } else {
       vec_->push_back(std::forward<T>(val));
@@ -376,7 +404,7 @@ public:
         spillover(size_ + 1);
         vec_->push_back(val);
       } else {
-        new (get_element_ptr(size_)) T(val);
+        new (get_arr_element_ptr(size_)) T(val);
       }
     } else {
       vec_->push_back(val);
@@ -391,7 +419,7 @@ public:
         spillover(size_ + 1);
         vec_->emplace_back(std::forward<Args>(args)...);
       } else {
-        T *dst = get_element_ptr(size_);
+        T *dst = get_arr_element_ptr(size_);
         new (dst) T(std::forward<Args>(args)...);
       }
     } else {
@@ -498,4 +526,7 @@ public:
   // If is_vector() == true, this returns an optional containing the vector
   // If it isn't true, then the optional is empty (!has_value)
   constexpr const std::optional<VecT> &get_vec() const { return vec_; }
+
+  // Returns the STATIC_SIZE calculated by calculate_static_size()
+  constexpr size_t get_static_size() const { return STATIC_AMOUNT; }
 };

@@ -46,7 +46,7 @@ private:
   // Spills over the current array values into a vector, with the ability to
   // reserve more than we need with `extra`
   constexpr void spillover(size_t capacity) {
-    assert(!vec_); // Should be uninitialised
+    assert(is_array()); // Should be uninitialised
     assert(capacity >=
            STATIC_AMOUNT); // Should be more than we are moving or same
     vec_ = std::make_optional<VecT>();
@@ -129,10 +129,10 @@ public:
   }
 
   constexpr T &operator[](size_t i) {
-    return vec_ ? (*vec_)[i] : get_arr_element(i);
+    return is_vector() ? (*vec_)[i] : get_arr_element(i);
   }
   constexpr const T &operator[](size_t i) const {
-    return vec_ ? (*vec_)[i] : get_arr_element(i);
+    return is_vector() ? (*vec_)[i] : get_arr_element(i);
   }
 
   constexpr T &front() { return (*this)[0]; }
@@ -142,32 +142,32 @@ public:
   constexpr const T &back() const { return (*this)[size_ - 1]; }
 
   constexpr T *data() noexcept {
-    return vec_ ? &(*vec_)[0] : get_arr_element_ptr(0);
+    return is_vector() ? &(*vec_)[0] : get_arr_element_ptr(0);
   }
   constexpr const T *data() const noexcept {
-    return vec_ ? &(*vec_)[0] : get_arr_element_ptr(0);
+    return is_vector() ? &(*vec_)[0] : get_arr_element_ptr(0);
   }
 
   // ----- ITERATORS -----
 
   constexpr iterator begin() noexcept {
-    return vec_ ? &(*vec_)[0] : get_arr_element_ptr(0);
+    return is_vector() ? &(*vec_)[0] : get_arr_element_ptr(0);
   }
   constexpr const_iterator begin() const noexcept {
-    return vec_ ? &(*vec_)[0] : get_arr_element_ptr(0);
+    return is_vector() ? &(*vec_)[0] : get_arr_element_ptr(0);
   }
   constexpr const_iterator cbegin() const noexcept {
-    return vec_ ? &(*vec_)[0] : get_arr_element_ptr(0);
+    return is_vector() ? &(*vec_)[0] : get_arr_element_ptr(0);
   }
 
   constexpr iterator end() noexcept {
-    return vec_ ? &(*vec_)[size_] : get_arr_element_ptr(size_);
+    return is_vector() ? &(*vec_)[size_] : get_arr_element_ptr(size_);
   }
   constexpr const_iterator end() const noexcept {
-    return vec_ ? &(*vec_)[size_] : get_arr_element_ptr(size_);
+    return is_vector() ? &(*vec_)[size_] : get_arr_element_ptr(size_);
   }
   constexpr const_iterator cend() const noexcept {
-    return vec_ ? &(*vec_)[size_] : get_arr_element_ptr(size_);
+    return is_vector() ? &(*vec_)[size_] : get_arr_element_ptr(size_);
   }
 
   constexpr reverse_iterator rbegin() noexcept {
@@ -211,7 +211,7 @@ public:
     if (size <= STATIC_AMOUNT) {
       return;
     } else {
-      if (!vec_) {
+      if (is_array()) {
         spillover(size);
       } else {
         vec_->reserve(size);
@@ -224,7 +224,7 @@ public:
   // size of the stack allocated array, and if it has, then the vector's
   // capacity
   constexpr size_t capacity() const noexcept {
-    if (!vec_) {
+    if (is_array()) {
       return STATIC_AMOUNT;
     } else {
       return vec_->capacity();
@@ -234,7 +234,7 @@ public:
   // Has no side effects if using the internal static storage, otherwise calls
   // the vector's `shrink_to_fit()`
   constexpr void shrink_to_fit() {
-    if (vec_)
+    if (is_vector())
       vec_->shrink_to_fit();
   }
 
@@ -242,7 +242,7 @@ public:
 
   // Clears the internal static storage, or the vector, whatever's in use
   constexpr void clear() {
-    if (vec_) {
+    if (is_vector()) {
       // All the static elements have been moved to the vector, and already
       // destructed by `spillover()`, so all we need to do is clear the vec
       vec_->clear();
@@ -261,7 +261,7 @@ public:
   constexpr iterator insert(const_iterator pos, T &&value) {
     const size_t idx = static_cast<size_t>(pos - cbegin());
     size_++;
-    if (!vec_ && size_ <= STATIC_AMOUNT) {
+    if (is_array() && size_ <= STATIC_AMOUNT) {
       for (size_t i = size_ - 1; i > idx; --i) {
         T *src = get_arr_element_ptr(i - 1);
         T *dst = get_arr_element_ptr(i);
@@ -275,7 +275,7 @@ public:
     }
 
     // If below is true, then, size_ must be > STATIC_AMOUNT
-    if (!vec_)
+    if (is_array())
       spillover(size_);
 
     // If we spillover, we now have a vector, or we already had a vector
@@ -294,7 +294,7 @@ public:
   constexpr iterator emplace(const_iterator pos, Args &&...args) {
     const size_t idx = static_cast<size_t>(pos - cbegin());
     size_++;
-    if (!vec_ && size_ <= STATIC_AMOUNT) {
+    if (is_array() && size_ <= STATIC_AMOUNT) {
       for (size_t i = size_ - 1; i > idx; --i) {
         T *src = get_arr_element_ptr(i - 1);
         T *dst = get_arr_element_ptr(i);
@@ -308,7 +308,7 @@ public:
     }
 
     // If below is true, then, size_ must be > STATIC_AMOUNT
-    if (!vec_)
+    if (is_array())
       spillover(size_);
 
     // If we spillover, we now have a vector, or we already had a vector
@@ -321,7 +321,7 @@ public:
   // value after it
   constexpr iterator erase(const_iterator pos) {
     const size_t idx = static_cast<size_t>(pos - cbegin());
-    if (vec_) {
+    if (is_vector()) {
       // Vector case
       auto it = vec_->erase(vec_->begin() + idx);
       size_--;
@@ -353,7 +353,7 @@ public:
   constexpr iterator erase(const_iterator first, const_iterator last) {
     const size_t first_idx = static_cast<size_t>(first - cbegin());
     const size_t last_idx = static_cast<size_t>(last - cbegin());
-    if (vec_) {
+    if (is_vector()) {
       // Vector case
       auto it =
           vec_->erase(vec_->begin() + first_idx, vec_->begin() + last_idx);
@@ -385,7 +385,7 @@ public:
 
   // Pushes data to the back of our SmallVector
   constexpr void push_back(T &&val) {
-    if (!vec_) {
+    if (is_array()) {
       if (size_ >= STATIC_AMOUNT) {
         spillover(size_ + 1);
         vec_->push_back(std::forward<T>(val));
@@ -399,7 +399,7 @@ public:
   }
   // Pushes data to the back of our SmallVector
   constexpr void push_back(const T &val) {
-    if (!vec_) {
+    if (is_array()) {
       if (size_ >= STATIC_AMOUNT) {
         spillover(size_ + 1);
         vec_->push_back(val);
@@ -414,7 +414,7 @@ public:
 
   // Constructs a new value in-place at the back of the SmallVector
   template <typename... Args> constexpr void emplace_back(Args &&...args) {
-    if (!vec_) {
+    if (is_array()) {
       if (size_ >= STATIC_AMOUNT) {
         spillover(size_ + 1);
         vec_->emplace_back(std::forward<Args>(args)...);

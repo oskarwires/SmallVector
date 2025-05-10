@@ -39,7 +39,7 @@ private:
   using VecT = std::vector<T>;
 
   // When our arr_ overflows, we move into the internal vec_
-  alignas(alignof(T)) std::byte arr_[STATIC_AMOUNT * sizeof(T)];
+  alignas(CACHE_LINE_SIZE_BYTES) std::byte arr_[STATIC_AMOUNT * sizeof(T)];
   std::optional<VecT> vec_;
   size_t size_;
 
@@ -240,12 +240,15 @@ public:
 
   // ----- MODIFIERS -----
 
-  // Clears the internal static storage, or the vector, whatever's in use
+  // Clears the internal static storage, or the vector, whatever's in use. If we
+  // are in vector mode, this resets the vector back to an array
   constexpr void clear() {
     if (is_vector()) {
       // All the static elements have been moved to the vector, and already
       // destructed by `spillover()`, so all we need to do is clear the vec
       vec_->clear();
+      // Wipes the std::optional back to being empty
+      vec_.reset();
     } else {
       for (size_t i = size_; i > 0; --i) {
         get_arr_element_ptr(i - 1)->~T();
@@ -348,7 +351,7 @@ public:
   }
 
   // Removes values from the `first` to `last` iterator (but not inclusive of
-  // `last`) Returns the iterator to the first value after the last removed
+  // `last`). Returns the iterator to the first value after the last removed
   // value
   constexpr iterator erase(const_iterator first, const_iterator last) {
     const size_t first_idx = static_cast<size_t>(first - cbegin());
@@ -410,6 +413,11 @@ public:
       vec_->push_back(val);
     }
     size_++;
+  }
+  // Pushes an initializer_list to the back of our SmallVector
+  constexpr void push_back_list(std::initializer_list<T> init) {
+    reserve(init.size() + size());
+    std::copy(init.begin(), init.end(), std::back_inserter(*this));
   }
 
   // Constructs a new value in-place at the back of the SmallVector

@@ -110,10 +110,12 @@ int main() {
   };
 
   "[capacity]"_test = [] {
-    SmallVector<int, 8> v = {1, 2, 3, 4, 5};
+    SmallVector<int, 4> v = {1, 2, 3, 4, 5};
 
     should("clear()/size()/empty()") = [v] {
+      expect(v.is_vector()) << "Expecting vector mode with STATIC_AMOUNT = 4";
       mut(v).clear();
+      expect(v.is_array()) << "Expecting array mode after clear()";
       expect(v.size() == 0_u);
       expect(v.empty());
       // Should also be in array mode
@@ -135,7 +137,10 @@ int main() {
       }
     };
 
-    should("capacity()") = [v] { expect(v.capacity() == 8_i); };
+    should("capacity()") = [] {
+      SmallVector<int, 8> v2 = {1, 2, 3, 4, 5};
+      expect(v2.capacity() == 8_i);
+    };
 
     should("shrink_to_fit()") = [v] {
       std::vector<int> v_mock = {1, 2, 3, 4, 5};
@@ -235,6 +240,12 @@ int main() {
       }
       expect(v.is_vector());
       expect(v.size() == (static_size + 5));
+
+      SmallVector<int> v3 = {1, 2, 3, 4};
+      v3.push_back_list({5, 6, 7, 8});
+      expect(v3.size() == 8_i)
+          << "Expecting size change after initializer_list push_back()";
+      expect(v3 == SmallVector({1, 2, 3, 4, 5, 6, 7, 8}));
     };
 
     should("append()") = [] {
